@@ -18,11 +18,11 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/anpr .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/anpr
+      - name: Build Docker image
+        run: docker buildx build -t ${{ secrets.DOCKER_USERNAME }}/anpr:latest -t ${{ secrets.DOCKER_USERNAME }}/anpr:${{ github.sha }} --push .
 
       - name: Copy docker-compose file to EC2
         uses: appleboy/scp-action@v0.1.7
@@ -40,15 +40,14 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            docker pull ${{ secrets.DOCKER_USERNAME }}/fastapi-cicd
-            docker stop fastapi || true
-            docker rm fastapi || true
-            docker run -d --name fastapi \
-              -p 80:8000 \
-              -e DB_HOST=${{ secrets.DB_HOST }} \
-              -e DB_PORT=${{ secrets.DB_PORT }} \
-              -e DB_USER=${{ secrets.DB_USER }} \
-              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-              -e DB_NAME=${{ secrets.DB_NAME }} \
-              -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
-              ${{ secrets.DOCKER_USERNAME }}/fastapi-cicd
+            cd ~
+            docker pull ${{ secrets.DOCKER_USERNAME }}/anpr:latest
+            docker stop anpr-fastapi || true
+            docker rm anpr-fastapi || true
+            export DB_HOST=${{ secrets.DB_HOST }}
+            export DB_PORT=${{ secrets.DB_PORT }}
+            export DB_USER=${{ secrets.DB_USER }}
+            export DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            export DB_NAME=${{ secrets.DB_NAME }}
+            export SECRET_KEY=${{ secrets.SECRET_KEY }}
+            docker-compose up -d
