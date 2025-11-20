@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project files
-COPY . .
+COPY . /app
 
 # Install UV package manager
 RUN pip install --no-cache-dir uv
