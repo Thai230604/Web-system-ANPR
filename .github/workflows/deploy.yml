@@ -3,21 +3,9 @@ name: Deploy FastAPI to EC2
 on:
   push:
     branches: ["main"]
-  workflow_dispatch:
-    inputs:
-      job:
-        description: 'Job to run'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - build-only
-          - deploy-only
 
 jobs:
   build:
-    if: github.event.inputs.job == 'all' || github.event.inputs.job == 'build-only' || github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -38,7 +26,6 @@ jobs:
           tags: ${{ secrets.DOCKER_USERNAME }}/anpr:latest
 
   deploy:
-    if: always() && (github.event.inputs.job == 'all' || github.event.inputs.job == 'deploy-only' || github.event_name == 'push')
     needs: build
     runs-on: ubuntu-latest
 
