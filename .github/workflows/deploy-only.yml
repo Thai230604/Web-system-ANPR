@@ -1,45 +1,10 @@
-name: Deploy FastAPI to EC2
+name: Deploy Only
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
-    inputs:
-      job:
-        description: 'Job to run'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - build-only
-          - deploy-only
 
 jobs:
-  build:
-    if: github.event.inputs.job == 'all' || github.event.inputs.job == 'build-only' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/anpr:latest
-
   deploy:
-    if: always() && (github.event.inputs.job == 'all' || github.event.inputs.job == 'deploy-only' || github.event_name == 'push')
-    needs: build
     runs-on: ubuntu-latest
 
     steps:
