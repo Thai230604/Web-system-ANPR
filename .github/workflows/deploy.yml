@@ -26,9 +26,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/anpr:latest
-            ${{ secrets.DOCKER_USERNAME }}/anpr:${{ github.sha }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/anpr:latest,${{ secrets.DOCKER_USERNAME }}/anpr:${{ github.sha }}
 
       - name: Copy docker-compose file to EC2
         uses: appleboy/scp-action@v0.1.7
