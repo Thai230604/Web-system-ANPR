@@ -26,6 +26,9 @@ COPY . .
 # Install UV package manager
 RUN pip install --no-cache-dir uv
 
+# Use Bash shell explicitly
+SHELL ["/bin/bash", "-c"]
+
 # Install Python dependencies using UV
 RUN uv pip install --no-cache --system -r <(uv pip compile pyproject.toml --quiet)
 
