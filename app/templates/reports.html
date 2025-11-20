@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - ANPR System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">📊 Reports & Analytics</h1>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4" id="stats-container">
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Total Detections</h5>
+                <p class="card-text fs-4 fw-bold" id="total-detections">0</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Unique Plates</h5>
+                <p class="card-text fs-4 fw-bold" id="unique-plates">0</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Avg Confidence</h5>
+                <p class="card-text fs-4 fw-bold" id="avg-confidence">0%</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body text-center">
+                <h5 class="card-title text-muted">Blacklisted</h5>
+                <p class="card-text fs-4 fw-bold text-danger" id="blacklisted-count">0</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tables -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">🚗 Top Detected Plates</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>License Plate</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="top-plates-table">
+                            <tr><td colspan="2" class="text-center text-muted">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">📈 Top 10 Blacklisted Plates</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>License Plate</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody id="blacklisted-table">
+                            <tr><td colspan="2" class="text-center text-muted">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export Buttons -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">📥 Export Data</h5>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-success" onclick="exportCSV()">
+                    📊 Export to CSV (Excel)
+                </button>
+                <button class="btn btn-danger" onclick="exportPDF()">
+                    📄 Export to PDF
+                </button>
+                <button class="btn btn-info" onclick="printReport()">
+                    🖨️ Print Report
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let allDetections = [];
+let allPlates = [];
+
+function getAuthHeader() {
+    const token = localStorage.getItem('access_token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+async function loadReports() {
+    try {
+        // Lấy toàn bộ detections
+        const response = await fetch('/stream/detections-history?limit=1000', {
+            headers: getAuthHeader()
+        });
+        
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        allDetections = data.detections || [];
+        
+        // Tính toán stats
+        calculateStats();
+        renderTopPlates();
+        renderBlacklistedPlates();
+        
+    } catch (err) {
+        console.error('Error loading reports:', err);
+    }
+}
+
+function calculateStats() {
+    if (!allDetections.length) return;
+    
+    // Total detections
+    document.getElementById('total-detections').textContent = allDetections.length;
+    
+    // Unique plates
+    const uniquePlates = new Set(allDetections.map(d => d.plate_text));
+    document.getElementById('unique-plates').textContent = uniquePlates.size;
+    
+    // Avg confidence
+    const avgConfidence = (allDetections.reduce((sum, d) => sum + d.confidence, 0) / allDetections.length * 100).toFixed(1);
+    document.getElementById('avg-confidence').textContent = avgConfidence + '%';
+    
+    // Blacklisted count
+    const blacklistedCount = allDetections.filter(d => d.is_blacklisted).length;
+    document.getElementById('blacklisted-count').textContent = blacklistedCount;
+}
+
+function renderTopPlates() {
+    const tbody = document.getElementById('top-plates-table');
+    
+    // Group by plate_text
+    const plateMap = {};
+    allDetections.forEach(d => {
+        plateMap[d.plate_text] = (plateMap[d.plate_text] || 0) + 1;
+    });
+    
+    // Sort by count descending
+    const sorted = Object.entries(plateMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+    
+    if (!sorted.length) {
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No data</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = sorted.map(([plate, count]) => `
+        <tr>
+            <td><strong class="text-primary">${plate}</strong></td>
+            <td><span class="badge bg-success">${count}</span></td>
+        </tr>
+    `).join('');
+}
+
+function renderBlacklistedPlates() {
+    const tbody = document.getElementById('blacklisted-table');
+    
+    // Filter blacklisted
+    const blacklisted = allDetections
+        .filter(d => d.is_blacklisted)
+        .slice(0, 10);
+    
+    if (!blacklisted.length) {
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No blacklisted plates</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = blacklisted.map(d => `
+        <tr>
+            <td><strong class="text-danger">${d.plate_text}</strong></td>
+            <td><small>${d.blacklist_reason || 'N/A'}</small></td>
+        </tr>
+    `).join('');
+}
+
+function exportCSV() {
+    if (!allDetections.length) {
+        alert('No data to export');
+        return;
+    }
+    
+    let csv = 'Timestamp,License Plate,Owner,Province,Confidence,Status,Reason\n';
+    
+    allDetections.forEach(d => {
+        const timestamp = new Date(d.timestamp).toLocaleString('vi-VN');
+        const confidence = (d.confidence * 100).toFixed(1);
+        const status = d.is_blacklisted ? 'BLACKLIST' : d.is_verified ? 'Verified' : 'Unknown';
+        const reason = d.blacklist_reason ? `"${d.blacklist_reason}"` : '';
+        
+        csv += `"${timestamp}","${d.plate_text}","${d.plate_owner || ''}","${d.plate_province || ''}","${confidence}%","${status}","${reason}"\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+}
+
+function exportPDF() {
+    if (!allDetections.length) {
+        alert('No data to export');
+        return;
+    }
+    
+    const element = document.getElementById('stats-container').parentElement;
+    const opt = {
+        margin: 10,
+        filename: `report_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { orientation: 'landscape', unit: 'mm', format: 'a4' }
+    };
+    
+    if (typeof html2pdf === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+        script.onload = () => {
+            html2pdf().set(opt).from(element).save();
+            alert('Report exported to PDF');
+        };
+        document.head.appendChild(script);
+    } else {
+        html2pdf().set(opt).from(element).save();
+        alert('Report exported to PDF');
+    }
+}
+
+function printReport() {
+    window.print();
+}
+
+// Load lúc page open
+document.addEventListener('DOMContentLoaded', loadReports);
+
+// Refresh every 30 seconds
+setInterval(loadReports, 30000);
+</script>
+
+{% endblock %}

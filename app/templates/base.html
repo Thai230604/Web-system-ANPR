@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ANPR System{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/bootstrap.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navbar - ẩn ở trang login/register -->
+    <nav id="navbar" class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">🚗 ANPR System</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/history">History</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/plates">Plates</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/reports">Reports</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="logout(); return false;">Logout</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="bg-dark text-white text-center py-4 mt-5">
+        <p>&copy; 2025 ANPR System. All rights reserved.</p>
+    </footer>
+
+    <script src="/static/js/bootstrap.bundle.js"></script>
+    <script src="/static/js/auth.js"></script>
+    <script>
+        // Ẩn navbar ở trang login/register
+        const currentPath = window.location.pathname;
+        const navbar = document.getElementById('navbar');
+        if (currentPath === '/login' || currentPath === '/register') {
+            navbar.style.display = 'none';
+        }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

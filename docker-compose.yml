@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: anpr-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-123456}
+      POSTGRES_DB: ${DB_NAME:-anpr}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - anpr-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Application
+  fastapi:
+    build: .
+    container_name: anpr-fastapi
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-123456}@db:5432/${DB_NAME:-anpr}
+      SECRET_KEY: ${SECRET_KEY}
+    ports:
+      - "80:8000"
+    volumes:
+      - ./app:/app/app
+      - ./crop:/app/crop
+      - ./model:/app/model
+    networks:
+      - anpr-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  anpr-network:
+    driver: bridge

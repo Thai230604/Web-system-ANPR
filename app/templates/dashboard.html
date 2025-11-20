@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+
+{% block title %}Server-Side Streaming - ANPR System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>🎥 Server-Side Streaming - License Plate Detection</h1>
+        <p class="text-muted">Ultra-fast MJPEG streaming - No WebSocket overhead!</p>
+    </div>
+</div>
+
+<!-- Status & FPS -->
+<div class="row mb-3">
+    <div class="col-md-6">
+        <span id="status-badge" class="badge bg-success fs-5">🟢 Live Streaming</span>
+        <span id="fps" class="badge bg-primary fs-5 ms-2">FPS: Calculating...</span>
+        <span id="plate-count-badge" class="badge bg-warning text-dark fs-5 ms-2">Plates: 0</span>
+    </div>
+    <div class="col-md-6 text-end">
+        <button id="startBtn" class="btn btn-success btn-sm" onclick="startStream()" style="display: none;">
+            ▶️ Start Stream
+        </button>
+        <button id="stopBtn" class="btn btn-danger btn-sm" onclick="stopStream()">
+            ⏹️ Stop Stream
+        </button>
+    </div>
+</div>
+
+<!-- Video Stream -->
+<div class="row mb-4">
+    <div class="col-lg-8 col-md-12">
+        <div class="card shadow">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">📹 Live Camera Feed</h5>
+            </div>
+            <div class="card-body p-0" style="background: #000;">
+                <img id="video-stream" 
+                     src="/stream/video_feed" 
+                     style="width: 100%; height: auto; display: block;"
+                     alt="Camera Stream">
+            </div>
+        </div>
+    </div>
+
+    <!-- Latest Detection Info -->
+    <div class="col-lg-4 col-md-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">📋 Latest Detection</h5>
+            </div>
+            <div class="card-body" style="min-height: 300px;">
+                <div id="latest-detection-info">
+                    <p class="text-muted text-center">Waiting for detections...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Detections Table -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">📊 Recent Detections History</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>License Plate</th>
+                                <th>Confidence</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="plates-table">
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">No detections yet...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let detectedPlates = [];
+let frameCount = 0;
+let lastFpsTime = Date.now();
+let streamActive = true;  // Track stream state
+
+// ✅ Lấy authorization header từ localStorage
+function getAuthHeader() {
+    const token = localStorage.getItem('access_token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+// ✅ Start Stream
+function startStream() {
+    streamActive = true;
+    const videoStream = document.getElementById('video-stream');
+    
+    // Reload video feed
+    videoStream.src = '/stream/video_feed?' + new Date().getTime();
+    
+    document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('stopBtn').style.display = 'inline-block';
+    document.getElementById('status-badge').className = 'badge bg-success fs-5';
+    document.getElementById('status-badge').textContent = '🟢 Live Streaming';
+    
+    console.log('[STREAM] Started');
+}
+
+// ✅ Stop Stream
+function stopStream() {
+    streamActive = false;
+    const videoStream = document.getElementById('video-stream');
+    
+    // Stop video feed
+    videoStream.src = '';
+    
+    document.getElementById('startBtn').style.display = 'inline-block';
+    document.getElementById('stopBtn').style.display = 'none';
+    document.getElementById('status-badge').className = 'badge bg-danger fs-5';
+    document.getElementById('status-badge').textContent = '🔴 Stream Stopped';
+    
+    console.log('[STREAM] Stopped');
+}
+
+// ✅ FPS Counter từ image onload
+const videoStream = document.getElementById('video-stream');
+videoStream.onload = () => {
+    if (!streamActive) return;
+    
+    frameCount++;
+    if (frameCount % 30 === 0) {
+        const now = Date.now();
+        const fps = Math.round(30000 / (now - lastFpsTime));
+        document.getElementById('fps').textContent = `FPS: ${fps}`;
+        lastFpsTime = now;
+    }
+};
+
+// ✅ Poll plates API mỗi 500ms (Real-time detected plates)
+setInterval(async () => {
+    if (!streamActive) return;
+    
+    try {
+        const response = await fetch('/stream/plates', { headers: getAuthHeader() });
+        const data = await response.json();
+        
+        if (data.plates && data.plates.length > 0) {
+            detectedPlates = data.plates;
+            document.getElementById('plate-count-badge').textContent = `Plates: ${data.count}`;
+        }
+    } catch (err) {
+        console.error('Failed to fetch plates:', err);
+    }
+}, 500);
+
+// ✅ Poll detections from DATABASE mỗi 1s (cho Recent Detections Table + Latest Detection)
+setInterval(async () => {
+    if (!streamActive) return;
+    
+    try {
+        // Lấy latest detection
+        const latestResponse = await fetch('/stream/latest-detection', { headers: getAuthHeader() });
+        const latestData = await latestResponse.json();
+        
+        if (latestData.success && latestData.detection) {
+            updateLatestDetection(latestData.detection);
+        }
+        
+        // Lấy detections history
+        const historyResponse = await fetch('/stream/detections-history?limit=50', { headers: getAuthHeader() });
+        const historyData = await historyResponse.json();
+        
+        if (historyData.success && historyData.detections && historyData.detections.length > 0) {
+            updatePlatesTable(historyData.detections);
+        }
+    } catch (err) {
+        console.error('Failed to fetch detections:', err);
+    }
+}, 1000);
+
+function updatePlatesList() {
+    const platesList = document.getElementById('plates-list');
+    
+    if (detectedPlates.length === 0) {
+        platesList.innerHTML = '<p class="text-muted text-center">Waiting for detections...</p>';
+        return;
+    }
+    
+    // Hiển thị 10 plates gần nhất (từ memory - real-time)
+    const recentPlates = detectedPlates.slice(0, 10);
+    
+    platesList.innerHTML = recentPlates.map((p, i) => {
+        // Kiểm tra verified và blacklist
+        const isVerified = p.is_verified || false;
+        const isBlacklisted = p.is_blacklisted || false;
+        
+        let alertClass = 'alert-success';
+        let badge = '';
+        
+        if (isBlacklisted) {
+            alertClass = 'alert-danger';
+            badge = '<span class="badge bg-danger ms-2">🚫 BLACKLISTED</span>';
+        } else if (isVerified) {
+            badge = '<span class="badge bg-success ms-2">✓ Verified</span>';
+        }
+        
+        return `
+        <div class="alert ${alertClass} mb-2" role="alert">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong style="font-size: 1.2em;">${p.plate}</strong>
+                    ${badge}
+                    <br>
+                    <small class="text-muted">${formatTimestamp(p.timestamp)}</small>
+                </div>
+                <div>
+                    <span class="badge bg-success">${(p.confidence * 100).toFixed(1)}%</span>
+                </div>
+            </div>
+        </div>
+    `}).join('');
+}
+
+function updatePlatesTable(detections) {
+    const platesTable = document.getElementById('plates-table');
+    
+    if (!detections || detections.length === 0) {
+        platesTable.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No detections yet...</td></tr>';
+        return;
+    }
+    
+    platesTable.innerHTML = detections.map((d, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td>
+                <strong>${d.plate_text}</strong>
+                ${d.is_blacklisted ? '<span class="badge bg-danger ms-2">BLACKLIST</span>' : ''}
+                ${d.is_verified ? '<span class="badge bg-success ms-2">Verified</span>' : ''}
+            </td>
+            <td>
+                <span class="badge ${getConfidenceBadge(d.confidence)}">
+                    ${(d.confidence * 100).toFixed(1)}%
+                </span>
+            </td>
+            <td>${formatTimestamp(d.timestamp)}</td>
+        </tr>
+    `).join('');
+}
+
+function updateLatestDetection(detection) {
+    const detectionInfo = document.getElementById('latest-detection-info');
+    
+    if (!detection) {
+        detectionInfo.innerHTML = '<p class="text-muted text-center">Waiting for detections...</p>';
+        return;
+    }
+    
+    // Xác định trạng thái
+    const isVerified = detection.is_verified;
+    const isBlacklisted = detection.is_blacklisted;
+    
+    let statusCard = '';
+    let statusTitle = '';
+    let statusColor = '';
+    
+    if (isBlacklisted) {
+        statusCard = 'border-danger';
+        statusTitle = '🚫 BLACKLIST - Xe Bị Cấm';
+        statusColor = 'text-danger';
+    } else if (isVerified) {
+        statusCard = 'border-success';
+        statusTitle = '✅ XE ĐÚNG - Biển Số Đã Xác Nhận';
+        statusColor = 'text-success';
+    } else {
+        statusCard = 'border-warning';
+        statusTitle = '❓ XE LẠ - Biển Số Chưa Xác Nhận';
+        statusColor = 'text-warning';
+    }
+    
+    detectionInfo.innerHTML = `
+        <div class="card ${statusCard} border-3">
+            <div class="card-body">
+                <h4 class="${statusColor}">${statusTitle}</h4>
+                <hr>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <p class="text-muted mb-1"><small>BIỂN SỐ</small></p>
+                        <h3 style="font-family: monospace; font-weight: bold;">${detection.plate_text}</h3>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="text-muted mb-1"><small>ĐỘ TIN CẬY</small></p>
+                        <div>
+                            <span class="badge ${getConfidenceBadge(detection.confidence)} fs-6">
+                                ${(detection.confidence * 100).toFixed(1)}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <p class="text-muted mb-1"><small>THỜI GIAN</small></p>
+                        <p class="mb-0">${formatTimestamp(detection.timestamp)}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="text-muted mb-1"><small>TRẠNG THÁI</small></p>
+                        <span class="badge ${isBlacklisted ? 'bg-danger' : isVerified ? 'bg-success' : 'bg-warning'}">
+                            ${isBlacklisted ? 'BLACKLIST' : isVerified ? 'Verified' : 'Unknown'}
+                        </span>
+                    </div>
+                </div>
+                
+                ${detection.plate_owner ? `
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <p class="text-muted mb-1"><small>CHỦ XE</small></p>
+                        <p class="mb-0"><strong>${detection.plate_owner}</strong></p>
+                    </div>
+                </div>
+                ` : ''}
+                
+                ${detection.plate_province ? `
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <p class="text-muted mb-1"><small>TỈNH/TP</small></p>
+                        <p class="mb-0">${detection.plate_province}</p>
+                    </div>
+                </div>
+                ` : ''}
+                
+                ${detection.blacklist_reason ? `
+                <div class="row">
+                    <div class="col-md-12">
+                        <p class="text-muted mb-1"><small>LÝ DO BLACKLIST</small></p>
+                        <p class="mb-0 text-danger"><strong>${detection.blacklist_reason}</strong></p>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function getConfidenceBadge(confidence) {
+    if (confidence >= 0.9) return 'bg-success';
+    if (confidence >= 0.7) return 'bg-warning';
+    return 'bg-danger';
+}
+
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+    });
+}
+
+// ✅ Error handling cho video stream
+videoStream.onerror = () => {
+    console.error('Video stream error');
+    if (streamActive) {
+        videoStream.src = '/stream/video_feed?' + new Date().getTime(); // Retry
+    }
+};
+
+// ✅ Auto-start stream khi page load
+document.addEventListener('DOMContentLoaded', () => {
+    startStream();
+});
+</script>
+
+<style>
+/* Smooth animations */
+.alert {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Video stream container */
+#video-stream {
+    border: 3px solid #28a745;
+    border-radius: 8px;
+}
+
+/* Badge styles */
+.badge {
+    font-weight: 600;
+    padding: 0.5em 0.8em;
+}
+
+/* Table hover effect */
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 123, 255, 0.1);
+}
+</style>
+
+{% endblock %}

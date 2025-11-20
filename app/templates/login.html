@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Login - ANPR System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow mt-5">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0">Login</h3>
+            </div>
+            <div class="card-body">
+                <!-- Error Alert -->
+                <div id="error-alert" class="alert alert-danger alert-dismissible fade show d-none" role="alert">
+                    <span id="error-msg"></span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+
+                <form id="loginForm" onsubmit="handleLogin(event)">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100" id="loginBtn">Login</button>
+                </form>
+                <hr>
+                <p class="text-center">Don't have an account? <a href="/register">Register here</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function handleLogin(event) {
+    event.preventDefault();
+    
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const loginBtn = document.getElementById('loginBtn');
+    
+    console.log('[LOGIN] Attempting login with username:', username);
+    
+    // Disable button while processing
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Logging in...';
+    
+    try {
+        const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+                username: username,
+                password: password
+            })
+        });
+        
+        console.log('[LOGIN] Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('[LOGIN] Login failed:', errorData);
+            showError(errorData.detail || 'Login failed');
+            loginBtn.disabled = false;
+            loginBtn.textContent = 'Login';
+            return;
+        }
+        
+        const data = await response.json();
+        console.log('[LOGIN] Response data:', data);
+        
+        // ✅ Lưu token vào localStorage
+        if (data.access_token) {
+            localStorage.setItem('access_token', data.access_token);
+            console.log('[LOGIN] Token saved to localStorage:', data.access_token.substring(0, 20) + '...');
+            
+            // ✅ Verify token was saved
+            const saved = localStorage.getItem('access_token');
+            console.log('[LOGIN] Token verification - saved:', !!saved);
+        } else {
+            console.error('[LOGIN] No access_token in response');
+        }
+        
+        // ✅ Redirect tới dashboard
+        console.log('[LOGIN] Redirecting to dashboard');
+        window.location.href = '/dashboard';
+        
+    } catch (err) {
+        console.error('[LOGIN] Error:', err);
+        showError('Server connection error: ' + err.message);
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Login';
+    }
+}
+
+function showError(message) {
+    const errorAlert = document.getElementById('error-alert');
+    const errorMsg = document.getElementById('error-msg');
+    errorMsg.textContent = message;
+    errorAlert.classList.remove('d-none');
+}
+</script>
+</script>
+{% endblock %}
