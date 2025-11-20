@@ -23,7 +23,7 @@ services:
 
   # FastAPI Application
   fastapi:
-    build: .
+    image: "${DOCKER_USERNAME:-thai230604}/anpr:latest"
     container_name: anpr-fastapi
     depends_on:
       db:
