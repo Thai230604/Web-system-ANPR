@@ -41,7 +41,7 @@ jobs:
           script: |
             # Navigate to project directory
             cd ~/anpr-backend || mkdir -p ~/anpr-backend && cd ~/anpr-backend
-            
+
             # Create .env file with secrets
             cat > .env << EOF
             DB_HOST=${{ secrets.DB_HOST }}
