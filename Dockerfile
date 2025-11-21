@@ -1,43 +1,27 @@
-# Use official Python runtime as a parent image
-FROM python:3.12-slim
+# Start with a base Python image
+FROM python:3.10-slim
 
-# Set working directory in container
-WORKDIR /app
+# Set working directory
+WORKDIR /code
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
     libgomp1 \
-    libglib2.0-0 \
-    libopenblas0 \
-    liblapack3 \
-    libblas3 \
-    gcc \
-    g++ \
-    make \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project files
-COPY . /app
+# Install dependencies
+COPY ./requirements.txt /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-# Install UV package manager
-RUN pip install --no-cache-dir uv
+# Copy the application code
+COPY ./app /code/app
+COPY ./main.py /code/main.py
+COPY ./model /code/model
 
-# Use Bash shell explicitly
-SHELL ["/bin/bash", "-c"]
+# Create crop directory for temporary files
+RUN mkdir -p /code/crop
 
-# Install Python dependencies using UV
-RUN uv pip install --no-cache --system -r <(uv pip compile pyproject.toml --quiet)
-
-# Expose port
-EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/api', timeout=5)" || exit 1
-
-# Run the application
+# Command to run the application with Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

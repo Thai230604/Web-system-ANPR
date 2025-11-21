@@ -1,75 +1,88 @@
-name: Deploy FastAPI to EC2
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/anpr:latest
+          tags: ${{ secrets.DOCKER_USERNAME }}/anpr-backend:latest
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
-
-      - name: Copy docker-compose file to EC2
-        uses: appleboy/scp-action@v0.1.7
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: "./docker-compose.yml"
-          target: "~/"
-
-      - name: Deploy on EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          timeout: 10m
-          command_timeout: 10m
           script: |
-            cd ~
-            # Login to Docker
-            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-            # Pull image with timeout
-            timeout 5m docker pull ${{ secrets.DOCKER_USERNAME }}/anpr:latest || true
-            # Cleanup
-            docker-compose down || true
-            docker system prune -f --volumes || true
-            # Fix line endings
-            dos2unix docker-compose.yml 2>/dev/null || sed -i 's/\r$//' docker-compose.yml
-            # Create .env file
-            cat > .env << 'EOFENV'
+            # Navigate to project directory
+            cd ~/anpr-backend || mkdir -p ~/anpr-backend && cd ~/anpr-backend
+            
+            # Create .env file with secrets
+            cat > .env << EOF
             DB_HOST=${{ secrets.DB_HOST }}
             DB_PORT=${{ secrets.DB_PORT }}
             DB_USER=${{ secrets.DB_USER }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             DB_NAME=${{ secrets.DB_NAME }}
             SECRET_KEY=${{ secrets.SECRET_KEY }}
-            DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
-            EOFENV
-            # Start containers with timeout
-            timeout 5m docker-compose up -d || docker-compose up -d
+            EOF
+
+            # Create docker-compose.yml if not exists
+            cat > docker-compose.yml << 'COMPOSE'
+            version: '3.8'
+
+            services:
+              web:
+                image: ${{ secrets.DOCKER_USERNAME }}/anpr-backend:latest
+                container_name: anpr-backend
+                ports:
+                  - "80:8000"
+                volumes:
+                  - ./crop:/code/crop
+                  - ./model:/code/model
+                environment:
+                  - DB_HOST=${DB_HOST}
+                  - DB_PORT=${DB_PORT}
+                  - DB_USER=${DB_USER}
+                  - DB_PASSWORD=${DB_PASSWORD}
+                  - DB_NAME=${DB_NAME}
+                  - SECRET_KEY=${SECRET_KEY}
+                  - ALGORITHM=HS256
+                  - ACCESS_TOKEN_EXPIRE_MINUTES=30
+                restart: unless-stopped
+                networks:
+                  - anpr-network
+
+            networks:
+              anpr-network:
+                driver: bridge
+            COMPOSE
+
+            # Login to Docker Hub
+            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+            # Pull latest image and restart
+            docker-compose pull
+            docker-compose down
+            docker-compose up -d
+
+            # Clean up old images
+            docker image prune -f
